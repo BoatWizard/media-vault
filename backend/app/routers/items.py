@@ -10,9 +10,28 @@ from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.models.item import Item, MediaType, ConditionType, CompletenessType
 from app.models.user import User
+from app.models.permission import InventoryPermission, PermissionLevel
 from app.services.storage import get_presigned_url
 
 router = APIRouter()
+
+
+async def _check_permission(db, owner_id: uuid.UUID, current_user_id: uuid.UUID, require_write: bool = False):
+    """Return the permission level or raise 403. Returns None if owner == current user."""
+    if owner_id == current_user_id:
+        return None
+    result = await db.execute(
+        select(InventoryPermission).where(
+            InventoryPermission.owner_id == owner_id,
+            InventoryPermission.grantee_id == current_user_id,
+        )
+    )
+    perm = result.scalar_one_or_none()
+    if not perm:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if require_write and perm.permission != PermissionLevel.read_write:
+        raise HTTPException(status_code=403, detail="Read-only access — write permission required")
+    return perm.permission
 
 
 class ItemCreate(BaseModel):
@@ -94,10 +113,16 @@ def item_to_response(item: Item) -> dict:
 @router.post("", response_model=dict)
 async def create_item(
     body: ItemCreate,
+    owner_id: Optional[str] = Query(None, description="Create in another user's inventory (requires read_write permission)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    item = Item(owner_id=current_user.id, **body.model_dump())
+    if owner_id:
+        target_owner_id = uuid.UUID(owner_id)
+        await _check_permission(db, target_owner_id, current_user.id, require_write=True)
+    else:
+        target_owner_id = current_user.id
+    item = Item(owner_id=target_owner_id, **body.model_dump())
     db.add(item)
     await db.flush()
     return item_to_response(item)
@@ -109,12 +134,18 @@ async def list_items(
     media_type: Optional[MediaType] = None,
     platform_id: Optional[int] = None,
     user_confirmed: Optional[bool] = None,
+    owner_id: Optional[str] = Query(None, description="View another user's inventory (requires permission)"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = select(Item).where(Item.owner_id == current_user.id)
+    if owner_id:
+        target_owner_id = uuid.UUID(owner_id)
+        await _check_permission(db, target_owner_id, current_user.id)
+    else:
+        target_owner_id = current_user.id
+    query = select(Item).where(Item.owner_id == target_owner_id)
 
     if q:
         query = query.where(Item.title.ilike(f"%{q}%"))
@@ -146,12 +177,11 @@ async def get_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Item).where(Item.id == uuid.UUID(item_id), Item.owner_id == current_user.id)
-    )
+    result = await db.execute(select(Item).where(Item.id == uuid.UUID(item_id)))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    await _check_permission(db, item.owner_id, current_user.id)
     return item_to_response(item)
 
 
@@ -162,12 +192,11 @@ async def update_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Item).where(Item.id == uuid.UUID(item_id), Item.owner_id == current_user.id)
-    )
+    result = await db.execute(select(Item).where(Item.id == uuid.UUID(item_id)))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    await _check_permission(db, item.owner_id, current_user.id, require_write=True)
 
     allowed = {c.name for c in Item.__table__.columns} - {"id", "owner_id", "created_at"}
     for key, value in body.items():
@@ -184,12 +213,11 @@ async def delete_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Item).where(Item.id == uuid.UUID(item_id), Item.owner_id == current_user.id)
-    )
+    result = await db.execute(select(Item).where(Item.id == uuid.UUID(item_id)))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    await _check_permission(db, item.owner_id, current_user.id, require_write=True)
 
     await db.delete(item)
     return {"deleted": item_id}

@@ -6,8 +6,9 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.routers import items, auth, platforms, metadata, images
-import app.models.platform  # noqa: F401 — registers Platform table with SQLAlchemy metadata
+from app.routers import items, auth, platforms, metadata, images, permissions
+import app.models.platform     # noqa: F401 — registers table with SQLAlchemy metadata
+import app.models.permission   # noqa: F401
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -68,6 +69,7 @@ app.include_router(items.router, prefix="/items", tags=["items"])
 app.include_router(platforms.router, prefix="/platforms", tags=["platforms"])
 app.include_router(metadata.router, prefix="/metadata", tags=["metadata"])
 app.include_router(images.router, prefix="/images", tags=["images"])
+app.include_router(permissions.router, prefix="/permissions", tags=["permissions"])
 
 
 @app.get("/health")

@@ -1,6 +1,6 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../services/authStore'
-import { Package, PlusCircle, LogOut } from 'lucide-react'
+import { Package, PlusCircle, LogOut, UserCircle } from 'lucide-react'
 
 export default function Layout() {
   const { user, logout } = useAuthStore()
@@ -46,9 +46,13 @@ export default function Layout() {
 
         <div className="flex items-center gap-3">
           {user && (
-            <span className="text-xs font-mono text-chrome-dim hidden sm:block">
+            <Link
+              to="/account"
+              className="flex items-center gap-1.5 text-xs font-mono text-chrome-dim hover:text-chrome transition-colors hidden sm:flex"
+            >
+              <UserCircle size={14} />
               {user.username}
-            </span>
+            </Link>
           )}
           <button onClick={handleLogout} className="text-chrome-dim hover:text-acid transition-colors">
             <LogOut size={16} />

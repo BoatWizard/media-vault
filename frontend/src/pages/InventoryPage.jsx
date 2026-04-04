@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Search, SlidersHorizontal, AlertCircle } from 'lucide-react'
+import { Search, AlertCircle, ChevronDown } from 'lucide-react'
 import api from '../services/api'
 import clsx from 'clsx'
 
@@ -59,9 +59,15 @@ export default function InventoryPage() {
   const [q, setQ] = useState('')
   const [mediaType, setMediaType] = useState('all')
   const [page, setPage] = useState(1)
+  const [viewingOwnerId, setViewingOwnerId] = useState(null) // null = own inventory
+
+  const { data: sharedInventories = [] } = useQuery({
+    queryKey: ['permissions', 'received'],
+    queryFn: () => api.get('/permissions/received').then((r) => r.data),
+  })
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['items', q, mediaType, page],
+    queryKey: ['items', q, mediaType, page, viewingOwnerId],
     queryFn: () =>
       api
         .get('/items', {
@@ -70,6 +76,7 @@ export default function InventoryPage() {
             media_type: mediaType === 'all' ? undefined : mediaType,
             page,
             page_size: 24,
+            owner_id: viewingOwnerId || undefined,
           },
         })
         .then((r) => r.data),
@@ -77,20 +84,42 @@ export default function InventoryPage() {
   })
 
   const totalPages = data ? Math.ceil(data.total / 24) : 1
+  const viewingUser = sharedInventories.find((p) => p.owner_id === viewingOwnerId)
 
   return (
     <div>
       {/* Header row */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-3xl text-chrome tracking-wide">INVENTORY</h1>
+          <h1 className="font-display text-3xl text-chrome tracking-wide">
+            {viewingUser ? `${viewingUser.owner_username.toUpperCase()}'S INVENTORY` : 'INVENTORY'}
+          </h1>
           {data && (
             <p className="text-chrome-dim text-xs font-mono mt-0.5">{data.total} items</p>
           )}
         </div>
-        <Link to="/add" className="btn-primary">
-          + Add Item
-        </Link>
+        <div className="flex items-center gap-3">
+          {sharedInventories.length > 0 && (
+            <div className="relative">
+              <select
+                className="input text-sm pr-8 appearance-none cursor-pointer"
+                value={viewingOwnerId || ''}
+                onChange={(e) => { setViewingOwnerId(e.target.value || null); setPage(1) }}
+              >
+                <option value="">My Inventory</option>
+                {sharedInventories.map((p) => (
+                  <option key={p.id} value={p.owner_id}>{p.owner_username}</option>
+                ))}
+              </select>
+              <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-chrome-dim pointer-events-none" />
+            </div>
+          )}
+          {!viewingOwnerId && (
+            <Link to="/add" className="btn-primary">
+              + Add Item
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

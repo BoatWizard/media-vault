@@ -124,6 +124,18 @@ CREATE INDEX idx_items_owner ON items (owner_id);
 CREATE INDEX idx_items_upc ON items (upc);
 CREATE INDEX idx_items_created ON items (created_at DESC);
 
+-- Inventory sharing permissions
+CREATE TYPE permission_level AS ENUM ('read', 'read_write');
+
+CREATE TABLE inventory_permissions (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    owner_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    grantee_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission  permission_level NOT NULL DEFAULT 'read',
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(owner_id, grantee_id)
+);
+
 -- Tags (cross-cutting labels: "graded", "sealed", "signed", etc.)
 CREATE TABLE tags (
     id      SERIAL PRIMARY KEY,

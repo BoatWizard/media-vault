@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    background-color: #0a0a0f;
+    color: #e8e8f0;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #13131a;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #3d3d5c;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #c8f135;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-acid text-ink-950 font-body font-semibold px-5 py-2.5 rounded-sm
+           hover:bg-acid-dark transition-colors duration-150 text-sm tracking-wide;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent text-chrome border border-ink-600 font-body font-medium px-5 py-2.5 rounded-sm
+           hover:border-acid hover:text-acid transition-colors duration-150 text-sm;
+  }
+
+  .card {
+    @apply bg-ink-900 border border-ink-700 rounded-sm;
+  }
+
+  .input {
+    @apply bg-ink-800 border border-ink-600 text-chrome placeholder-ink-600
+           rounded-sm px-3 py-2.5 text-sm font-body w-full
+           focus:outline-none focus:border-acid focus:ring-1 focus:ring-acid
+           transition-colors duration-150;
+  }
+
+  .label {
+    @apply text-xs font-mono text-chrome-dim uppercase tracking-widest mb-1.5 block;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-mono font-medium;
+  }
+
+  .badge-game    { @apply bg-ink-700 text-acid; }
+  .badge-movie   { @apply bg-ink-700 text-blue-400; }
+  .badge-tv_show { @apply bg-ink-700 text-purple-400; }
+  .badge-music   { @apply bg-ink-700 text-pink-400; }
+  .badge-other   { @apply bg-ink-700 text-chrome-dim; }
+}

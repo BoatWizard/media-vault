@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: media_inventory_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-media_inventory}
+      POSTGRES_USER: ${POSTGRES_USER:-media_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - nginx_reverse_proxy 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-media_user} -d ${POSTGRES_DB:-media_inventory}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: media_inventory_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme123}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - nginx_reverse_proxy
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: media_inventory_backend
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-media_inventory}
+      DB_USER: ${POSTGRES_USER:-media_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-changeme123}
+      MINIO_BUCKET: ${MINIO_BUCKET:-media-inventory}
+      IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:-}
+      IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:-}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      OMDB_API_KEY: ${OMDB_API_KEY:-}
+      SCREENSCRAPER_USER: ${SCREENSCRAPER_USER:-}
+      SCREENSCRAPER_PASSWORD: ${SCREENSCRAPER_PASSWORD:-}
+      SECRET_KEY: ${SECRET_KEY:-supersecretchangeme}
+      ALLOWED_ORIGINS: '["http://localhost:3000","http://localhost:80"]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - nginx_reverse_proxy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+    container_name: media_inventory_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - nginx_reverse_proxy
+    ports:
+      - "3000:80"
+
+networks:
+  nginx_reverse_proxy:
+    external: true
+
+volumes:
+  postgres_data:
+  minio_data:

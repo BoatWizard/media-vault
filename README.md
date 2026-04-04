@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/26484739/README.md)
 # Media Vault
 
 A self-hosted media inventory system for cataloging physical games, movies, books, music, and more. Scan barcodes, search by title, upload photos, and browse your collection from any device on your network.

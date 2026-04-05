@@ -218,3 +218,4 @@ Images are stored in MinIO under a private bucket. The backend generates 7-day p
 ## License
 
 MIT
+

@@ -5,6 +5,7 @@ and Google Books to return ranked metadata candidates for a given barcode, ISBN,
 import logging
 import re
 import httpx
+from datetime import datetime
 from typing import Optional
 from app.core.config import settings
 
@@ -13,13 +14,40 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+# Formats returned by various APIs that we try to parse into YYYY-MM-DD
+_DATE_FORMATS = [
+    "%Y-%m-%d",      # ISO — already correct
+    "%d %b %Y",      # OMDb: "15 Jan 2021"
+    "%B %d, %Y",     # Google Books: "January 15, 2021"
+    "%Y-%m",         # year-month only
+    "%Y",            # year only
+]
+
+def _parse_date(value) -> Optional[str]:
+    """Coerce any date-like string to YYYY-MM-DD, or return None."""
+    if not value:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(str(value), fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    # Last resort: grab a 4-digit year
+    m = re.search(r'\b(\d{4})\b', str(value))
+    if m:
+        return f"{m.group(1)}-01-01"
+    return None
+
+
 def _normalize(**kwargs) -> dict:
     """Return a metadata result dict with all expected keys."""
     return {
         "title": kwargs.get("title", "Unknown"),
         "media_type": kwargs.get("media_type"),
         "platform": kwargs.get("platform"),
-        "release_date": kwargs.get("release_date"),
+        "release_date": _parse_date(kwargs.get("release_date")),
         "description": kwargs.get("description"),
         "developer": kwargs.get("developer"),
         "publisher": kwargs.get("publisher"),

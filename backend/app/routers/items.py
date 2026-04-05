@@ -11,6 +11,7 @@ from app.core.auth import get_current_user
 from app.models.item import Item, MediaType, ConditionType, CompletenessType
 from app.models.user import User
 from app.models.permission import InventoryPermission, PermissionLevel
+from app.models.wishlist_permission import WishlistPermission
 from app.services.storage import get_presigned_url
 
 router = APIRouter()
@@ -32,6 +33,22 @@ async def _check_permission(db, owner_id: uuid.UUID, current_user_id: uuid.UUID,
     if require_write and perm.permission != PermissionLevel.read_write:
         raise HTTPException(status_code=403, detail="Read-only access — write permission required")
     return perm.permission
+
+
+async def _check_wishlist_permission(db, owner_id: uuid.UUID, current_user_id: uuid.UUID, require_owner: bool = False):
+    """Wishlist is always read-only for grantees. require_owner=True for write ops."""
+    if owner_id == current_user_id:
+        return None
+    if require_owner:
+        raise HTTPException(status_code=403, detail="Only the owner can modify wishlist items")
+    result = await db.execute(
+        select(WishlistPermission).where(
+            WishlistPermission.owner_id == owner_id,
+            WishlistPermission.grantee_id == current_user_id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Access denied")
 
 
 class ItemCreate(BaseModel):
@@ -57,6 +74,7 @@ class ItemCreate(BaseModel):
     screenscraper_id: Optional[int] = None
     enrichment_sources: Optional[List[str]] = None
     user_confirmed: bool = False
+    is_wishlist: bool = False
 
 
 class ItemResponse(ItemCreate):
@@ -106,6 +124,7 @@ def item_to_response(item: Item) -> dict:
         "screenscraper_id": item.screenscraper_id,
         "enrichment_sources": item.enrichment_sources,
         "user_confirmed": item.user_confirmed,
+        "is_wishlist": item.is_wishlist,
         "created_at": item.created_at.isoformat() if item.created_at else None,
     }
 
@@ -134,6 +153,7 @@ async def list_items(
     media_type: Optional[MediaType] = None,
     platform_id: Optional[int] = None,
     user_confirmed: Optional[bool] = None,
+    is_wishlist: Optional[bool] = Query(None),
     owner_id: Optional[str] = Query(None, description="View another user's inventory (requires permission)"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -142,7 +162,10 @@ async def list_items(
 ):
     if owner_id:
         target_owner_id = uuid.UUID(owner_id)
-        await _check_permission(db, target_owner_id, current_user.id)
+        if is_wishlist:
+            await _check_wishlist_permission(db, target_owner_id, current_user.id)
+        else:
+            await _check_permission(db, target_owner_id, current_user.id)
     else:
         target_owner_id = current_user.id
     query = select(Item).where(Item.owner_id == target_owner_id)
@@ -155,6 +178,10 @@ async def list_items(
         query = query.where(Item.platform_id == platform_id)
     if user_confirmed is not None:
         query = query.where(Item.user_confirmed == user_confirmed)
+    if is_wishlist is not None:
+        query = query.where(Item.is_wishlist == is_wishlist)
+    else:
+        query = query.where(Item.is_wishlist == False)  # noqa: E712 — default to inventory
 
     count_result = await db.execute(select(func.count()).select_from(query.subquery()))
     total = count_result.scalar()
@@ -181,7 +208,10 @@ async def get_item(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    await _check_permission(db, item.owner_id, current_user.id)
+    if item.is_wishlist:
+        await _check_wishlist_permission(db, item.owner_id, current_user.id)
+    else:
+        await _check_permission(db, item.owner_id, current_user.id)
     return item_to_response(item)
 
 
@@ -196,7 +226,10 @@ async def update_item(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    await _check_permission(db, item.owner_id, current_user.id, require_write=True)
+    if item.is_wishlist:
+        await _check_wishlist_permission(db, item.owner_id, current_user.id, require_owner=True)
+    else:
+        await _check_permission(db, item.owner_id, current_user.id, require_write=True)
 
     allowed = {c.name for c in Item.__table__.columns} - {"id", "owner_id", "created_at"}
     for key, value in body.items():
@@ -217,7 +250,10 @@ async def delete_item(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    await _check_permission(db, item.owner_id, current_user.id, require_write=True)
+    if item.is_wishlist:
+        await _check_wishlist_permission(db, item.owner_id, current_user.id, require_owner=True)
+    else:
+        await _check_permission(db, item.owner_id, current_user.id, require_write=True)
 
     await db.delete(item)
     return {"deleted": item_id}

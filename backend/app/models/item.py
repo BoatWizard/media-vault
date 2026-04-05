@@ -65,6 +65,7 @@ class Item(Base):
     screenscraper_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     enrichment_sources: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)
     user_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_wishlist: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

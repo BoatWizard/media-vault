@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useDropzone } from 'react-dropzone'
@@ -119,7 +119,7 @@ function ImageGrid({ images, onRemove, onAdd }) {
 }
 
 // ── Confirm / edit form ──────────────────────────────────────────────────────
-function ConfirmForm({ initial, initialImages, platforms, onSave, onBack }) {
+function ConfirmForm({ initial, initialImages, platforms, onSave, onBack, saveLabel = 'Save Item' }) {
   const [form, setForm] = useState({
     title:              initial?.title || '',
     media_type:         initial?.media_type || 'game',
@@ -293,7 +293,7 @@ function ConfirmForm({ initial, initialImages, platforms, onSave, onBack }) {
       <div className="flex gap-3 pt-2">
         <button onClick={onBack} className="btn-ghost">← Back</button>
         <button onClick={handleSave} className="btn-primary flex items-center gap-2" disabled={!form.title}>
-          <Check size={14} /> Save Item
+          <Check size={14} /> {saveLabel}
         </button>
       </div>
     </div>
@@ -546,6 +546,8 @@ export default function AddItemPage() {
 
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const isWishlist = searchParams.get('wishlist') === 'true'
 
   const { data: platforms } = useQuery({
     queryKey: ['platforms'],
@@ -556,10 +558,11 @@ export default function AddItemPage() {
     mutationFn: (form) => api.post('/items', {
       ...form,
       upc: scannedUpc || form.upc || null,
+      is_wishlist: isWishlist,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries(['items'])
-      navigate('/')
+      navigate(isWishlist ? '/wishlist' : '/')
     },
     onError: (err) => setSaveError(err.response?.data?.detail || 'Failed to save item'),
   })
@@ -606,13 +609,16 @@ export default function AddItemPage() {
   if (selected) {
     return (
       <div className="max-w-2xl mx-auto">
-        <h1 className="font-display text-2xl text-chrome tracking-wide mb-6">CONFIRM ITEM</h1>
+        <h1 className="font-display text-2xl text-chrome tracking-wide mb-6">
+          {isWishlist ? 'CONFIRM WISHLIST ITEM' : 'CONFIRM ITEM'}
+        </h1>
         <ConfirmForm
           initial={selected}
           initialImages={capturedImages}
           platforms={platforms}
           onSave={(form) => saveMutation.mutate(form)}
           onBack={handleBack}
+          saveLabel={isWishlist ? 'Save to Wishlist' : 'Save Item'}
         />
         {saveError && <p className="text-red-400 text-sm font-mono mt-3">{saveError}</p>}
       </div>
@@ -640,7 +646,9 @@ export default function AddItemPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="font-display text-2xl text-chrome tracking-wide mb-6">ADD ITEM</h1>
+      <h1 className="font-display text-2xl text-chrome tracking-wide mb-6">
+        {isWishlist ? 'ADD TO WISHLIST' : 'ADD ITEM'}
+      </h1>
 
       <div className="flex gap-1 mb-6 bg-ink-900 border border-ink-700 rounded-sm p-1">
         {MODES.map(({ id, label, icon: Icon }) => (
@@ -672,7 +680,8 @@ export default function AddItemPage() {
           initialImages={[]}
           platforms={platforms}
           onSave={(form) => saveMutation.mutate(form)}
-          onBack={() => navigate('/')}
+          onBack={() => navigate(isWishlist ? '/wishlist' : '/')}
+          saveLabel={isWishlist ? 'Save to Wishlist' : 'Save Item'}
         />
       )}
     </div>

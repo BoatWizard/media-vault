@@ -8,6 +8,7 @@ import AddItemPage from './pages/AddItemPage'
 import ItemDetailPage from './pages/ItemDetailPage'
 import Layout from './components/Layout'
 import AccountPage from './pages/AccountPage'
+import WishlistPage from './pages/WishlistPage'
 
 function RequireAuth({ children }) {
   const token = useAuthStore((s) => s.token)
@@ -37,6 +38,7 @@ export default function App() {
           <Route index element={<InventoryPage />} />
           <Route path="add" element={<AddItemPage />} />
           <Route path="item/:id" element={<ItemDetailPage />} />
+          <Route path="wishlist" element={<WishlistPage />} />
           <Route path="account/*" element={<AccountPage />} />
         </Route>
       </Routes>

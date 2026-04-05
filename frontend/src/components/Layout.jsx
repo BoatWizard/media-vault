@@ -1,6 +1,6 @@
 import { Outlet, NavLink, Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../services/authStore'
-import { Package, PlusCircle, LogOut, UserCircle } from 'lucide-react'
+import { Package, PlusCircle, LogOut, UserCircle, Heart } from 'lucide-react'
 
 export default function Layout() {
   const { user, logout } = useAuthStore()
@@ -40,6 +40,17 @@ export default function Layout() {
             >
               <PlusCircle size={15} />
               Add Item
+            </NavLink>
+            <NavLink
+              to="/wishlist"
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm font-body transition-colors ${
+                  isActive ? 'text-acid' : 'text-chrome-dim hover:text-chrome'
+                }`
+              }
+            >
+              <Heart size={15} />
+              Wishlist
             </NavLink>
           </nav>
         </div>

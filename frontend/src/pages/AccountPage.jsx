@@ -96,6 +96,90 @@ function SecuritySection() {
   )
 }
 
+// ── Wishlist sharing sub-section ──────────────────────────────────────────────
+function WishlistSharingSection() {
+  const queryClient = useQueryClient()
+  const [newUsername, setNewUsername] = useState('')
+  const [shareError, setShareError] = useState('')
+
+  const { data: granted = [] } = useQuery({
+    queryKey: ['wishlist-permissions', 'granted'],
+    queryFn: () => api.get('/wishlist-permissions/granted').then((r) => r.data),
+  })
+
+  const shareMutation = useMutation({
+    mutationFn: (data) => api.post('/wishlist-permissions', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['wishlist-permissions', 'granted'])
+      setNewUsername('')
+      setShareError('')
+    },
+    onError: (err) => setShareError(err.response?.data?.detail || 'Failed to share wishlist'),
+  })
+
+  const revokeMutation = useMutation({
+    mutationFn: (id) => api.delete(`/wishlist-permissions/${id}`),
+    onSuccess: () => queryClient.invalidateQueries(['wishlist-permissions', 'granted']),
+  })
+
+  return (
+    <div className="pt-6 border-t border-ink-700 space-y-4">
+      <div>
+        <h2 className="font-display text-xl text-chrome tracking-wide mb-1">WISHLIST SHARING</h2>
+        <p className="text-chrome-dim text-sm font-mono mb-4">
+          Share your wishlist as read-only. Useful for friends and family who want to know what you're looking for.
+        </p>
+        <form
+          onSubmit={(e) => { e.preventDefault(); setShareError(''); shareMutation.mutate({ username: newUsername.trim() }) }}
+          className="flex gap-2 flex-wrap items-end"
+        >
+          <div className="flex-1 min-w-40">
+            <label className="label">Username</label>
+            <input
+              className="input font-mono"
+              placeholder="their_username"
+              value={newUsername}
+              onChange={(e) => setNewUsername(e.target.value)}
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            className="btn-primary shrink-0"
+            disabled={shareMutation.isPending || !newUsername.trim()}
+          >
+            {shareMutation.isPending ? '…' : 'Share Wishlist'}
+          </button>
+        </form>
+        {shareError && <p className="text-red-400 text-sm font-mono mt-2">{shareError}</p>}
+      </div>
+
+      {granted.length > 0 && (
+        <div>
+          <h3 className="text-xs font-mono text-chrome-dim uppercase tracking-wider mb-3">
+            Wishlist shared with
+          </h3>
+          <div className="space-y-2">
+            {granted.map((perm) => (
+              <div key={perm.id} className="card p-3 flex items-center gap-3">
+                <p className="text-chrome font-mono text-sm flex-1">{perm.grantee_username}</p>
+                <p className="text-chrome-dim text-xs font-mono">Read only</p>
+                <button
+                  onClick={() => window.confirm(`Remove wishlist access for ${perm.grantee_username}?`) && revokeMutation.mutate(perm.id)}
+                  className="text-red-500 hover:text-red-400 transition-colors shrink-0"
+                  title="Revoke access"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Permissions ───────────────────────────────────────────────────────────────
 function PermissionsSection() {
   const queryClient = useQueryClient()
@@ -274,6 +358,8 @@ function PermissionsSection() {
           </div>
         </div>
       )}
+
+      <WishlistSharingSection />
     </div>
   )
 }

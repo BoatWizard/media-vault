@@ -110,6 +110,7 @@ CREATE TABLE items (
     screenscraper_id INT,
     enrichment_sources TEXT[],
     user_confirmed  BOOLEAN DEFAULT false,
+    is_wishlist     BOOLEAN DEFAULT false NOT NULL,
 
     -- Timestamps
     created_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -132,6 +133,15 @@ CREATE TABLE inventory_permissions (
     owner_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     grantee_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     permission  permission_level NOT NULL DEFAULT 'read',
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(owner_id, grantee_id)
+);
+
+-- Wishlist sharing (always read-only)
+CREATE TABLE wishlist_permissions (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    owner_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    grantee_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(owner_id, grantee_id)
 );

@@ -1,13 +1,16 @@
 import { Outlet, NavLink, Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../services/authStore'
+import { useQueryClient } from '@tanstack/react-query'
 import { Package, PlusCircle, LogOut, UserCircle, Heart } from 'lucide-react'
 
 export default function Layout() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const handleLogout = () => {
     logout()
+    queryClient.clear()
     navigate('/login')
   }
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, asc, desc, nullslast, extract, or_, and_
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date
@@ -147,14 +147,27 @@ async def create_item(
     return item_to_response(item)
 
 
+_SORT_COLUMNS = {
+    "title": Item.title,
+    "release_date": Item.release_date,
+    "created_at": Item.created_at,
+}
+
 @router.get("", response_model=ItemListResponse)
 async def list_items(
     q: Optional[str] = Query(None, description="Search by title"),
     media_type: Optional[MediaType] = None,
-    platform_id: Optional[int] = None,
     user_confirmed: Optional[bool] = None,
     is_wishlist: Optional[bool] = Query(None),
     owner_id: Optional[str] = Query(None, description="View another user's inventory (requires permission)"),
+    condition: Optional[List[ConditionType]] = Query(None),
+    completeness: Optional[List[CompletenessType]] = Query(None),
+    platform_id: Optional[List[int]] = Query(None),
+    genre: Optional[List[str]] = Query(None, description="Case-insensitive partial match; OR across multiple values"),
+    release_decade: Optional[List[int]] = Query(None, description="Decade start years (e.g. 1990); 0 = pre-1970; OR across selections"),
+    release_year: Optional[int] = None,
+    sort_by: Optional[str] = Query("created_at", description="title | release_date | created_at"),
+    sort_dir: Optional[str] = Query("desc", description="asc | desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -174,19 +187,42 @@ async def list_items(
         query = query.where(Item.title.ilike(f"%{q}%"))
     if media_type:
         query = query.where(Item.media_type == media_type)
-    if platform_id:
-        query = query.where(Item.platform_id == platform_id)
     if user_confirmed is not None:
         query = query.where(Item.user_confirmed == user_confirmed)
     if is_wishlist is not None:
         query = query.where(Item.is_wishlist == is_wishlist)
     else:
         query = query.where(Item.is_wishlist == False)  # noqa: E712 — default to inventory
+    if condition:
+        query = query.where(Item.condition.in_(condition))
+    if completeness:
+        query = query.where(Item.completeness.in_(completeness))
+    if platform_id:
+        query = query.where(Item.platform_id.in_(platform_id))
+    if genre:
+        query = query.where(or_(
+            func.array_to_string(Item.genre, '|').ilike(f"%{g}%") for g in genre
+        ))
+    if release_year is not None:
+        query = query.where(extract('year', Item.release_date) == release_year)
+    elif release_decade:
+        decade_clauses = []
+        for d in release_decade:
+            if d == 0:
+                decade_clauses.append(extract('year', Item.release_date) < 1970)
+            else:
+                decade_clauses.append(and_(
+                    extract('year', Item.release_date) >= d,
+                    extract('year', Item.release_date) < d + 10,
+                ))
+        query = query.where(or_(*decade_clauses))
 
     count_result = await db.execute(select(func.count()).select_from(query.subquery()))
     total = count_result.scalar()
 
-    query = query.order_by(Item.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    sort_col = _SORT_COLUMNS.get(sort_by or 'created_at', Item.created_at)
+    order_expr = nullslast(asc(sort_col)) if sort_dir == 'asc' else nullslast(desc(sort_col))
+    query = query.order_by(order_expr).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
     items = result.scalars().all()
 
@@ -196,6 +232,40 @@ async def list_items(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/genres", response_model=List[str])
+async def list_genres(
+    is_wishlist: Optional[bool] = Query(None),
+    owner_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return distinct genres present in the current user's inventory or wishlist."""
+    if owner_id:
+        target_owner_id = uuid.UUID(owner_id)
+        if is_wishlist:
+            await _check_wishlist_permission(db, target_owner_id, current_user.id)
+        else:
+            await _check_permission(db, target_owner_id, current_user.id)
+    else:
+        target_owner_id = current_user.id
+
+    wishlist_flag = is_wishlist if is_wishlist is not None else False
+    stmt = (
+        select(func.unnest(Item.genre).label("genre"))
+        .where(Item.owner_id == target_owner_id)
+        .where(Item.is_wishlist == wishlist_flag)
+        .where(Item.genre.isnot(None))
+        .distinct()
+    )
+    result = await db.execute(stmt)
+    genres = sorted(
+        {g.strip().lower() for (g,) in result.all() if g and g.strip()},
+        key=str.lower,
+    )
+    # Return title-cased for display, but filtering is case-insensitive on the backend
+    return [g.title() for g in genres]
 
 
 @router.get("/{item_id}", response_model=dict)

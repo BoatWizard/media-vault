@@ -305,6 +305,25 @@ async def _open_library_isbn_lookup(isbn: str) -> Optional[dict]:
 
 # ── Google Books (ISBN fallback) ──────────────────────────────────────────────
 
+def _google_books_parse(info: dict, source_label: str, confidence: float) -> dict:
+    """Convert a Google Books volumeInfo dict to a normalized result."""
+    cover = (info.get("imageLinks") or {}).get("thumbnail") or (info.get("imageLinks") or {}).get("smallThumbnail")
+    if cover:
+        cover = cover.replace("http://", "https://")
+    return _normalize(
+        title=info.get("title"),
+        media_type="book",
+        release_date=info.get("publishedDate"),
+        developer=", ".join(info.get("authors", [])) or None,
+        publisher=info.get("publisher"),
+        genre=info.get("categories", []),
+        cover_art_url=cover,
+        description=info.get("description"),
+        sources=[source_label],
+        confidence=confidence,
+    )
+
+
 async def _google_books_isbn_lookup(isbn: str) -> Optional[dict]:
     """Look up a book by ISBN using Google Books API (free, no key required)."""
     logger.info("GoogleBooks: looking up ISBN=%r", isbn)
@@ -322,22 +341,65 @@ async def _google_books_isbn_lookup(isbn: str) -> Optional[dict]:
         logger.info("GoogleBooks: no results for ISBN=%r", isbn)
         return None
     info = items[0].get("volumeInfo", {})
-    cover = (info.get("imageLinks") or {}).get("thumbnail") or (info.get("imageLinks") or {}).get("smallThumbnail")
-    if cover:
-        cover = cover.replace("http://", "https://")
     logger.info("GoogleBooks: found title=%r authors=%r publisher=%r", info.get("title"), info.get("authors"), info.get("publisher"))
-    return _normalize(
-        title=info.get("title"),
-        media_type="book",
-        release_date=info.get("publishedDate"),
-        developer=", ".join(info.get("authors", [])) or None,
-        publisher=info.get("publisher"),
-        genre=info.get("categories", []),
-        cover_art_url=cover,
-        description=info.get("description"),
-        sources=["googlebooks"],
-        confidence=0.82,
-    )
+    return _google_books_parse(info, "googlebooks", 0.82)
+
+
+async def _google_books_title_search(title: str) -> list[dict]:
+    """Search Google Books by title (free, no key required). Returns up to 5 results."""
+    logger.info("GoogleBooks: title search for %r", title)
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(
+            "https://www.googleapis.com/books/v1/volumes",
+            params={"q": f"intitle:{title}", "maxResults": 5, "printType": "books"},
+        )
+        logger.debug("GoogleBooks title search response: HTTP %d body=%s", r.status_code, r.text[:300])
+        if r.status_code != 200:
+            logger.warning("GoogleBooks: title search failed: HTTP %d", r.status_code)
+            return []
+    items = r.json().get("items", [])
+    if not items:
+        logger.info("GoogleBooks: no title results for %r", title)
+        return []
+    results = [_google_books_parse(item.get("volumeInfo", {}), "googlebooks", 0.75) for item in items]
+    logger.info("GoogleBooks: got %d title results for %r", len(results), title)
+    return results
+
+
+async def _open_library_title_search(title: str) -> list[dict]:
+    """Search Open Library by title (free, no key required). Returns up to 5 results."""
+    logger.info("OpenLibrary: title search for %r", title)
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(
+            "https://openlibrary.org/search.json",
+            params={"title": title, "limit": 5, "fields": "key,title,author_name,publisher,first_publish_year,cover_i,subject"},
+        )
+        logger.debug("OpenLibrary title search response: HTTP %d body=%s", r.status_code, r.text[:300])
+        if r.status_code != 200:
+            logger.warning("OpenLibrary: title search failed: HTTP %d", r.status_code)
+            return []
+    docs = r.json().get("docs", [])
+    results = []
+    for doc in docs:
+        cover_i = doc.get("cover_i")
+        cover = f"https://covers.openlibrary.org/b/id/{cover_i}-L.jpg" if cover_i else None
+        authors = doc.get("author_name") or []
+        publishers = doc.get("publisher") or []
+        subjects = doc.get("subject") or []
+        year = doc.get("first_publish_year")
+        results.append(_normalize(
+            title=doc.get("title"),
+            media_type="book",
+            release_date=str(year) if year else None,
+            developer=", ".join(authors[:3]) if authors else None,
+            publisher=publishers[0] if publishers else None,
+            genre=subjects[:5],
+            cover_art_url=cover,
+            sources=["openlibrary"],
+            confidence=0.72,
+        ))
+    logger.info("OpenLibrary: got %d title results for %r", len(results), title)
+    return results
 
 
 # ── ScreenScraper ─────────────────────────────────────────────────────────────
@@ -444,6 +506,10 @@ class MetadataService:
         if media_type in (None, "movie", "tv_show"):
             results += await _tmdb_search(title, media_type)
             results += await _omdb_search(title)
+
+        if media_type in (None, "book"):
+            results += await _google_books_title_search(title)
+            results += await _open_library_title_search(title)
 
         # Deduplicate by (title, year) — same title in different years are distinct releases
         seen: dict[tuple, dict] = {}

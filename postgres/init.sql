@@ -74,7 +74,11 @@ INSERT INTO platforms (name, short_name, media_type, sort_order) VALUES
     ('4K Blu-ray', '4K', 'movie', 640),
     ('LaserDisc', 'LD', 'movie', 650),
     ('Beta', 'Beta', 'movie', 660),
-    ('Other', 'Other', 'other', 999);
+    ('Other', 'Other', 'other', 999),
+    ('Hardcover', 'HC', 'book', 710),
+    ('Paperback', 'PB', 'book', 720),
+    ('eBook', 'eBook', 'book', 730),
+    ('Audiobook', 'Audio', 'book', 740);
 
 -- Main items table
 CREATE TABLE items (
